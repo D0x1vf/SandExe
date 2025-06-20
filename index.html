@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SandExe - Cosmic Combustion Edition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    html, body { margin: 0; overflow: hidden; background: black; }
+    canvas { display: block; background: #0b0d10; touch-action: none; }
+    #tools {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.6); padding: 6px; border-radius: 6px;
+      z-index: 10;
+    }
+    button {
+      margin: 2px; padding: 6px 10px; background: #222;
+      border: 1px solid #555; color: white; border-radius: 3px;
+    }
+    button.active { background: #C1440E; }
+  </style>
+</head>
+<body>
+<div id="tools">
+  <button onclick="select('redDust')" id="btn_redDust">Red Dust</button>
+  <button onclick="select('saturnMist')" id="btn_saturnMist">Saturn Mist</button>
+  <button onclick="select('voidGel')" id="btn_voidGel">Void Gel</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const W = 160, H = 120, S = 5;
+const C = document.getElementById('c');
+const CTX = C.getContext('2d');
+C.width = W * S; C.height = H * S;
+
+let G = [...Array(H)].map(() => Array(W).fill("empty"));
+let T = [...Array(H)].map(() => Array(W).fill(0)); // Temperature
+
+const E = {
+  empty:   {color: "#0b0d10", type: "none"},
+  redDust: {color: "#C1440E", type: "solid", flammable: true},
+  saturnMist: {color: "#ACD2FB", type: "gas", flammable: true},
+  voidGel: {color: "#4C0080", type: "liquid", melts: true},
+  plasma:  {color: "#FF4080", type: "plasma", heat: 200}
+};
+
+let current = "redDust";
+
+function select(name) {
+  current = name;
+  for (let id in E) {
+    const btn = document.getElementById("btn_" + id);
+    if (btn) btn.classList.toggle("active", id === name);
+  }
+}
+
+function update() {
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      T[y][x] = Math.max(0, T[y][x] - 0.3);
+
+  for (let y = H - 2; y >= 1; y--) {
+    for (let x = 1; x < W - 1; x++) {
+      const id = G[y][x];
+      const cell = E[id];
+      if (id === "empty") continue;
+
+      if (id === "plasma") {
+        for (let [dx, dy] of [[0,1],[1,0],[-1,0],[0,-1]]) {
+          const nx = x + dx, ny = y + dy;
+          if (G[ny]?.[nx] && G[ny][nx] !== "plasma") {
+            G[ny][nx] = "plasma";
+            T[ny][nx] = 255;
+          }
+        }
+        continue;
+      }
+
+      if (cell.flammable && T[y][x] > 100) {
+        G[y][x] = "plasma";
+        continue;
+      }
+
+      if (id === "voidGel") {
+        for (let [dx, dy] of [[1,0],[-1,0],[0,1]]) {
+          const nx = x+dx, ny = y+dy;
+          if (E[G[ny]?.[nx]]?.type === "solid")
+            G[ny][nx] = "voidGel";
+        }
+      }
+
+      if (["solid","liquid"].includes(cell.type)) {
+        if (G[y+1][x] === "empty") {
+          G[y+1][x] = id; G[y][x] = "empty";
+          T[y+1][x] = T[y][x]; T[y][x] = 0;
+        } else if (cell.type === "liquid") {
+          for (let dx of [-1,1]) {
+            if (G[y+1][x+dx] === "empty") {
+              G[y+1][x+dx] = id; G[y][x] = "empty";
+              T[y+1][x+dx] = T[y][x]; T[y][x] = 0;
+              break;
+            }
+          }
+        }
+      }
+
+      if (cell.type === "gas" && G[y-1][x] === "empty") {
+        G[y-1][x] = id; G[y][x] = "empty";
+        T[y-1][x] = T[y][x]; T[y][x] = 0;
+      }
+
+      for (let [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+        const nx = x+dx, ny = y+dy;
+        if (G[ny]?.[nx] && T[ny][nx] < T[y][x] - 1)
+          T[ny][nx] += 0.3;
+      }
+    }
+  }
+}
+
+function draw() {
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let id = G[y][x], temp = T[y][x];
+      let color = E[id].color;
+      if (temp > 30 && id !== "plasma")
+        color = `hsl(${10+temp},90%,60%)`;
+      CTX.fillStyle = color;
+      CTX.fillRect(x*S, y*S, S, S);
+    }
+  }
+}
+
+function drawAt(eX, eY) {
+  const rect = C.getBoundingClientRect();
+  const x = Math.floor((eX - rect.left) / S);
+  const y = Math.floor((eY - rect.top) / S);
+  if (x >= 0 && x < W && y >= 0 && y < H) G[y][x] = current;
+}
+
+C.addEventListener("mousemove", e => {
+  if (e.buttons === 1) drawAt(e.clientX, e.clientY);
+});
+C.addEventListener("touchmove", e => {
+  e.preventDefault();
+  drawAt(e.touches[0].clientX, e.touches[0].clientY);
+}, { passive: false });
+
+(function loop() {
+  update(); draw(); requestAnimationFrame(loop);
+})();
+select("redDust");
+</script>
+</body>
+</html>
